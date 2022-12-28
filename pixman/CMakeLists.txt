@@ -29,6 +29,7 @@ set(SOURCES
     pixman-timer.c
     pixman-trap.c
     pixman-utils.c
+	dither/make-blue-noise.c
 )
 
 set(HEADERS
@@ -39,6 +40,7 @@ set(HEADERS
     pixman-edge-imp.h
     pixman-inlines.h
     pixman-private.h
+	dither/blue-noise-64x64.h
 )
 
 #proccesor_optimizations

@@ -53,13 +53,13 @@ AC_PREREQ([2.57])
 #
 
 m4_define([pixman_major], 0)
-m4_define([pixman_minor], 33)
+m4_define([pixman_minor], 42)
 m4_define([pixman_micro], 3)
 
 m4_define([pixman_version],[pixman_major.pixman_minor.pixman_micro])
 
 AC_INIT(pixman, pixman_version, [pixman@lists.freedesktop.org], pixman)
-AM_INIT_AUTOMAKE([foreign dist-bzip2])
+AM_INIT_AUTOMAKE([foreign dist-xz])
 
 # Suppress verbose compile lines
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
@@ -273,7 +273,7 @@ dnl ===========================================================================
 dnl Check for Loongson Multimedia Instructions
 
 if test "x$LS_CFLAGS" = "x" ; then
-    LS_CFLAGS="-march=loongson2f"
+    LS_CFLAGS="-mloongson-mmi"
 fi
 
 have_loongson_mmi=no
@@ -347,14 +347,33 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
 #error "Need GCC >= 3.4 for MMX intrinsics"
 #endif
 #include <mmintrin.h>
-#include <xmmintrin.h>
+#include <stdint.h>
+
+/* Check support for block expressions */
+#define _mm_shuffle_pi16(A, N)						\
+    ({									\
+	__m64 ret;							\
+									\
+	/* Some versions of clang will choke on K */ 			\
+	asm ("pshufw %2, %1, %0\n\t"					\
+	     : "=y" (ret)						\
+	     : "y" (A), "K" ((const int8_t)N)				\
+	);								\
+									\
+	ret;								\
+    })
+
 int main () {
     __m64 v = _mm_cvtsi32_si64 (1);
     __m64 w;
 
-    /* Test some intrinsics from xmmintrin.h */
     w = _mm_shuffle_pi16(v, 5);
-    w = _mm_mulhi_pu16(w, w);
+
+    /* Some versions of clang will choke on this */
+    asm ("pmulhuw %1, %0\n\t"
+	: "+y" (w)
+	: "y" (v)
+    );
 
     return _mm_cvtsi64_si32 (v);
 }]])], have_mmx_intrinsics=yes)
@@ -410,10 +429,11 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
 #include <mmintrin.h>
 #include <xmmintrin.h>
 #include <emmintrin.h>
+int param;
 int main () {
-    __m128i a = _mm_set1_epi32 (0), b = _mm_set1_epi32 (0), c;
+    __m128i a = _mm_set1_epi32 (param), b = _mm_set1_epi32 (param + 1), c;
 	c = _mm_xor_si128 (a, b);
-    return 0;
+    return _mm_cvtsi128_si32(c);
 }]])], have_sse2_intrinsics=yes)
 CFLAGS=$xserver_save_CFLAGS
 
@@ -454,10 +474,11 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
 #include <xmmintrin.h>
 #include <emmintrin.h>
 #include <tmmintrin.h>
+int param;
 int main () {
-    __m128i a = _mm_set1_epi32 (0), b = _mm_set1_epi32 (0), c;
+    __m128i a = _mm_set1_epi32 (param), b = _mm_set1_epi32 (param + 1), c;
     c = _mm_maddubs_epi16 (a, b);
-    return 0;
+    return _mm_cvtsi128_si32(c);
 }]])], have_ssse3_intrinsics=yes)
 CFLAGS=$xserver_save_CFLAGS
 
@@ -482,19 +503,19 @@ fi
 AM_CONDITIONAL(USE_SSSE3, test $have_ssse3_intrinsics = yes)
 
 dnl ===========================================================================
-dnl Other special flags needed when building code using MMX or SSE instructions
+dnl Other special flags needed when building code using x86 ISA extensions
 case $host_os in
    solaris*)
-      # When building 32-bit binaries, apply a mapfile to ensure that the
-      # binaries aren't flagged as only able to run on MMX+SSE capable CPUs
-      # since they check at runtime before using those instructions.
+      # When building Solaris binaries, apply a mapfile to ensure that the
+      # binaries aren't flagged as only able to run on MMX/SSE/SSSE3 capable
+      # CPUs since they check at runtime before using those instructions.
       # Not all linkers grok the mapfile format so we check for that first.
-      if test "$AMD64_ABI" = "no" ; then
+      if test "$host_cpu" = "i386" -o "$host_cpu" = "x86_64"; then
 	 use_hwcap_mapfile=no
 	 AC_MSG_CHECKING(whether to use a hardware capability map file)
 	 hwcap_save_LDFLAGS="$LDFLAGS"
 	 HWCAP_LDFLAGS='-Wl,-M,$(srcdir)/solaris-hwcap.mapfile'
-	 LDFLAGS="$LDFLAGS -Wl,-M,pixman/solaris-hwcap.mapfile"
+	 LDFLAGS="$LDFLAGS -Wl,-M,${srcdir}/pixman/solaris-hwcap.mapfile"
 	 AC_LINK_IFELSE([AC_LANG_SOURCE([[int main() { return 0; }]])],
 			use_hwcap_mapfile=yes,
 			HWCAP_LDFLAGS="")
@@ -507,6 +528,9 @@ case $host_os in
       if test "x$SSE2_LDFLAGS" = "x" ; then
 	 SSE2_LDFLAGS="$HWCAP_LDFLAGS"
       fi
+      if test "x$SSSE3_LDFLAGS" = "x" ; then
+	 SSSE3_LDFLAGS="$HWCAP_LDFLAGS"
+      fi
       ;;
 esac
 
@@ -517,6 +541,7 @@ AC_SUBST(MMX_LDFLAGS)
 AC_SUBST(SSE2_CFLAGS)
 AC_SUBST(SSE2_LDFLAGS)
 AC_SUBST(SSSE3_CFLAGS)
+AC_SUBST(SSSE3_LDFLAGS)
 
 dnl ===========================================================================
 dnl Check for VMX/Altivec
@@ -644,6 +669,40 @@ AM_CONDITIONAL(USE_ARM_NEON, test $have_arm_neon = yes)
 AC_MSG_RESULT($have_arm_neon)
 if test $enable_arm_neon = yes && test $have_arm_neon = no ; then
    AC_MSG_ERROR([ARM NEON intrinsics not detected])
+fi
+
+dnl ==========================================================================
+dnl Check if assembler is gas compatible and supports ARM-a64 NEON instructions
+have_arm_a64_neon=no
+AC_MSG_CHECKING(whether to use ARM A64 NEON assembler)
+xserver_save_CFLAGS=$CFLAGS
+CFLAGS="-x assembler-with-cpp $CFLAGS"
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+.text
+.arch armv8-a
+.altmacro
+prfm pldl2strm, [x0]
+xtn v0.8b, v0.8h]])], have_arm_a64_neon=yes)
+CFLAGS=$xserver_save_CFLAGS
+
+AC_ARG_ENABLE(arm-a64-neon,
+   [AC_HELP_STRING([--disable-arm-a64-neon],
+                   [disable ARM A64 NEON fast paths])],
+   [enable_arm_a64_neon=$enableval], [enable_arm_a64_neon=auto])
+
+if test $enable_arm_a64_neon = no ; then
+   have_arm_a64_neon=disabled
+fi
+
+if test $have_arm_a64_neon = yes ; then
+   AC_DEFINE(USE_ARM_A64_NEON, 1, [use ARM A64_NEON assembly optimizations])
+fi
+
+AM_CONDITIONAL(USE_ARM_A64_NEON, test $have_arm_a64_neon = yes)
+
+AC_MSG_RESULT($have_arm_a64_neon)
+if test $enable_arm_a64_neon = yes && test $have_arm_a64_neon4 = no ; then
+   AC_MSG_ERROR([ARM A64 NEON intrinsics not detected])
 fi
 
 dnl ===========================================================================
@@ -813,6 +872,19 @@ fi
 AC_SUBST(PIXMAN_TIMERS)
 
 dnl ===================================
+dnl gnuplot
+
+AC_ARG_ENABLE(gnuplot,
+   [AC_HELP_STRING([--enable-gnuplot],
+                   [enable output of filters that can be piped to gnuplot [default=no]])],
+   [enable_gnuplot=$enableval], [enable_gnuplot=no])
+
+if test $enable_gnuplot = yes ; then
+   AC_DEFINE(PIXMAN_GNUPLOT, 1, [enable output that can be piped to gnuplot])
+fi
+AC_SUBST(PIXMAN_GNUPLOT)
+
+dnl ===================================
 dnl GTK+
 
 AC_ARG_ENABLE(gtk,
@@ -824,7 +896,7 @@ PKG_PROG_PKG_CONFIG
 
 if test $enable_gtk = yes ; then
    AC_CHECK_LIB([pixman-1], [pixman_version_string])
-   PKG_CHECK_MODULES(GTK, [gtk+-2.0 >= 2.16 pixman-1])
+   PKG_CHECK_MODULES(GTK, [gtk+-3.0 pixman-1])
 fi
 
 if test $enable_gtk = auto ; then
@@ -832,7 +904,7 @@ if test $enable_gtk = auto ; then
 fi
 
 if test $enable_gtk = auto ; then
-   PKG_CHECK_MODULES(GTK, [gtk+-2.0 >= 2.16 pixman-1], [enable_gtk=yes], [enable_gtk=no])
+   PKG_CHECK_MODULES(GTK, [gtk+-3.0 pixman-1], [enable_gtk=yes], [enable_gtk=no])
 fi
 
 AM_CONDITIONAL(HAVE_GTK, [test "x$enable_gtk" = xyes])
@@ -1114,7 +1186,7 @@ m4_if(m4_eval(pixman_minor % 2), [1], [
    echo
    echo "      or by filing a bug at "
    echo
-   echo "          https://bugs.freedesktop.org/enter_bug.cgi?product=pixman "
+   echo "          https://gitlab.freedesktop.org/pixman/pixman/-/issues/new "
    echo
    echo "      If you are looking for a stable release of pixman, please note "
    echo "      that stable releases have _even_ minor version numbers. Ie., "

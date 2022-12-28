@@ -777,6 +777,11 @@ color_to_pixel (const pixman_color_t *color,
 {
     uint32_t c = color_to_uint32 (color);
 
+    if (PIXMAN_FORMAT_TYPE (format) == PIXMAN_TYPE_RGBA_FLOAT)
+    {
+	return FALSE;
+    }
+
     if (!(format == PIXMAN_a8r8g8b8     ||
           format == PIXMAN_x8r8g8b8     ||
           format == PIXMAN_a8b8g8r8     ||
@@ -1015,6 +1020,7 @@ pixman_format_supported_source (pixman_format_code_t format)
     case PIXMAN_x2r10g10b10:
     case PIXMAN_a8r8g8b8:
     case PIXMAN_a8r8g8b8_sRGB:
+    case PIXMAN_r8g8b8_sRGB:
     case PIXMAN_x8r8g8b8:
     case PIXMAN_a8b8g8r8:
     case PIXMAN_x8b8g8r8:
