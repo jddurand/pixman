@@ -69,6 +69,7 @@ SOFTWARE.
 #ifndef PIXMAN_H__
 #define PIXMAN_H__
 
+#include <pixman-export.h>
 #include <pixman-version.h>
 
 #ifdef  __cplusplus

@@ -9,6 +9,7 @@ if(UNIX)
 endif(UNIX)
 
 add_library (tests_core OBJECT utils.c utils-prng.c)
+target_compile_definitions(tests_core PUBLIC -DPIXMAN_1_STATIC_DEFINE)
 
 add_executable(a1-trap-test a1-trap-test.c $<TARGET_OBJECTS:tests_core>)
 target_link_libraries(a1-trap-test ${SYSTEM_LIBRARIES} ${PNG_LIBRARY} pixman-1_static)

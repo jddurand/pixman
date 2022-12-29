@@ -1,3 +1,5 @@
+include(GenerateExportHeader)
+
 set(SOURCES
     pixman.c
     pixman-access.c
@@ -101,23 +103,39 @@ if(X86)
     endif(X86_SSSE3)
 endif(X86)
 
-IF(UNIX)
-    set(CMAKE_C_FLAGS -fPIC)
-ENDIF(UNIX) 
-
-add_library (pixman-1_core OBJECT ${SOURCES} ${HEADERS})
+#
+# Note that position independant flags is ON by default for SHARED, MODULE and EXECUTABLE
+#
 
 if(BUILD_SHARED)
-    add_library(pixman-1 SHARED $<TARGET_OBJECTS:pixman-1_core>)
+    add_library(pixman-1 SHARED ${SOURCES} ${HEADERS})
     install(TARGETS pixman-1 EXPORT PixmanTargets RUNTIME DESTINATION bin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 endif()
 
 if(BUILD_STATIC)
-    add_library(pixman-1_static STATIC $<TARGET_OBJECTS:pixman-1_core>)
-    if(NOT MSVC)
-        set_target_properties(pixman-1_static PROPERTIES OUTPUT_NAME pixman-1)
-    endif(NOT MSVC)
+    add_library(pixman-1_static STATIC ${SOURCES} ${HEADERS})
     install(TARGETS pixman-1_static EXPORT PixmanTargets RUNTIME DESTINATION bin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 endif(BUILD_STATIC)
 
-install(FILES pixman.h ${CMAKE_CURRENT_BINARY_DIR}/pixman-version.h DESTINATION include/pixman-1)
+#
+# We generate the same export header for both
+#
+if(BUILD_SHARED)
+	set(export_target pixman-1)
+else()
+	set(export_target pixman-1_static)
+endif()
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
+generate_export_header(${export_target}
+	BASE_NAME PIXMAN_1
+	EXPORT_FILE_NAME pixman-export.h
+	EXPORT_MACRO_NAME PIXMAN_API
+	NO_EXPORT_MACRO_NAME PIXMAN_API_NO_EXPORT)
+if(BUILD_SHARED)
+	target_compile_definitions(pixman-1 PRIVATE -Dpixman_1_EXPORTS)
+endif()
+if(BUILD_STATIC)
+	target_compile_definitions(pixman-1_static PUBLIC -DPIXMAN_1_STATIC_DEFINE)
+endif()
+install(FILES pixman.h ${CMAKE_CURRENT_BINARY_DIR}/pixman-version.h ${CMAKE_CURRENT_BINARY_DIR}/pixman-export.h DESTINATION include/pixman-1)

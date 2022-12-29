@@ -7,5 +7,5 @@ Name: Pixman
 Description: The pixman library (version 1)
 Version: @PACKAGE_VERSION@
 Cflags: -I${includedir}/pixman-1
+Cflags.private: -I${includedir}/pixman-1 -DPIXMAN_1_STATIC_DEFINE
 Libs: -L${libdir} -lpixman-1
-
